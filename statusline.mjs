@@ -91,8 +91,7 @@ process.stdin.on("end", () => {
     const data = JSON.parse(input);
 
     const workspaceRoot = getProjectRoot(data.workspace?.project_dir ?? "");
-    const branchName =
-        data.worktree?.branch ?? data.workspace?.git_worktree ?? "unknown";
+    const branchName = execSync('git branch --show-current', { encoding: 'utf8' })?.trim() ?? "unknown";
     const diff = getGitDiffSummary(data.workspace?.project_dir ?? "");
     const model = data.model?.display_name ?? "?";
     const contextPct = Math.floor(data.context_window?.used_percentage || 0);
@@ -102,9 +101,7 @@ process.stdin.on("end", () => {
     const totalOutputTokens = formatCount(
         data.context_window?.total_output_tokens ?? 0,
     );
-    const totalCost = (
-        Math.round((data.cost?.total_cost_usd ?? 0) * 100) / 100
-    ).toFixed(2);
+    const totalCost = (data.cost?.total_cost_usd ?? 0).toFixed(2);
     const effort = data.effort?.level ?? "";
     const vimMode = data.vim?.mode ?? "";
     const agentName = data.agent?.name ?? "";
@@ -134,17 +131,17 @@ process.stdin.on("end", () => {
     // ── Row 2 ────────────────────────────────────────────────────────────────
     const r2left =
         `${c.yellow}${model}${c.reset}` +
-        sep +
+        dot +
         buildContextBar(contextPct) +
         ` ${c.barFill}${contextPct}%${c.reset}`;
 
     const r2right =
         `${c.cyan}↓ ${totalInputTokens}${c.reset}` +
-        sep +
+        dot +
         `${c.red}↑ ${totalOutputTokens}${c.reset}` +
-        sep +
+        dot +
         `${c.green}$${totalCost}${c.reset}` +
-        (effort ? sep + `${c.purple}⚡ ${effort}${c.reset}` : "");
+        (effort ? dot + `${c.purple}${effort}${c.reset}` : "");
 
     console.log(spaceBetween(r1left, r1right));
     console.log("─".repeat(parseInt(process.env.COLUMNS)));
