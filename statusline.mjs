@@ -29,14 +29,43 @@ const c = {
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 // Build a line with left and right parts, padded to terminal width
-function spaceBetween(left, right, width = process.env.columns || 80) {
+function spaceBetween(left, right, width = process.env.columns || 80, pad) {
   const leftLen = stripAnsi(left).length;
   const rightLen = stripAnsi(right).length;
-  const gap = Math.max(1, width - leftLen - rightLen);
+  const gap = Math.max(1, width - leftLen - (pad ? rightLen + pad : rightLen));
   return left + " ".repeat(gap) + right;
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
+function formatMsToTime(ms) {
+  if (isNaN(ms) || ms < 0) return "00:00";
+
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  // Pads single digits with a leading zero (e.g., 5 becomes "05")
+  const paddedHours = String(hours).padStart(2, "0");
+  const paddedMinutes = String(minutes).padStart(2, "0");
+
+  return `${paddedHours}:${paddedMinutes}`;
+}
+
+function formatMsToTimeWithSecs(ms) {
+  if (isNaN(ms) || ms < 0) return "00:00:00";
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const totalMinutes = Math.floor(totalSeconds / 60);
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const seconds = totalSeconds % 60;
+
+  return [hours, minutes, seconds]
+    .map((val) => String(val).padStart(2, "0"))
+    .join(":");
+}
+
 function formatCount(number) {
   return new Intl.NumberFormat("en-US", {
     notation: "compact",
@@ -104,9 +133,31 @@ process.stdin.on("end", () => {
     data.context_window?.total_output_tokens ?? 0,
   );
   const totalCost = (data.cost?.total_cost_usd ?? 0).toFixed(2);
+  const totalDurationMs = (data.cost?.total_duration_ms ?? 0).toFixed(2);
+  const totalApiDurationMs = (data.cost?.total_api_duration_ms ?? 0).toFixed(2);
   const effort = data.effort?.level ?? "";
   const vimMode = data.vim?.mode ?? "";
   const agentName = data.agent?.name ?? "";
+
+  const currentInputTokens = formatCount(
+    data.context_window?.current_usage?.input_tokens ?? 0,
+  );
+  const currentOutputTokens = formatCount(
+    data.context_window?.current_usage?.output_tokens ?? 0,
+  );
+  const cacheCreationInputTokens = formatCount(
+    data.context_window?.current_usage?.cache_creation_input_tokens ?? 0,
+  );
+  const cacheReadInputTokens = formatCount(
+    data.context_window?.current_usage?.cache_read_input_tokens ?? 0,
+  );
+
+  const currentStats = [
+    `${c.red}▼ ${currentInputTokens}${c.reset}`,
+    `${c.green}▲ ${currentOutputTokens}${c.reset}`,
+    `${c.yellow}\udb80\uddba ${cacheCreationInputTokens}${c.reset}`,
+    `${c.green}\udb86\udd1f ${cacheReadInputTokens}${c.reset}`,
+  ];
 
   const sep = `${c.muted} ⏽ ${c.reset}`;
   const dot = `${c.muted} · ${c.reset}`;
@@ -124,30 +175,33 @@ process.stdin.on("end", () => {
     .join(sep);
 
   const r1right = [
-    `${c.purple} ${branchName}${c.reset}`,
     diffStr,
+    `${c.purple} ${branchName}${c.reset}`,
     agentName ? `${dot}${c.agentRed}${agentName}${c.reset}` : "",
   ]
     .filter(Boolean)
     .join(sep);
 
   // ── Row 2 ────────────────────────────────────────────────────────────────
-  const r2left =
-    `${c.yellow}${model}${c.reset}` +
-    sep +
-    buildContextBar(contextPct) +
-    ` ${c.barFill}${contextPct}%${c.reset}`;
+  const r2left = [
+    `${c.yellow}${model}${c.reset}`,
+    `${buildContextBar(contextPct)} ${c.barFill}${contextPct}%${c.reset}`,
+  ].join(sep);
 
-  const r2right =
-    `${c.cyan}▼ ${totalInputTokens}${c.reset}` +
-    " " +
-    `${c.red}▲ ${totalOutputTokens}${c.reset}` +
-    sep +
-    `${c.green}$ ${totalCost}${c.reset}` +
-    (effort ? sep + `${c.purple}Σ ${effort}${c.reset}` : "");
+  const r2right = [
+    `${c.cyan}▼ ${totalInputTokens}${c.reset} ${c.red}▲ ${totalOutputTokens}${c.reset}`,
+    `${c.green}$ ${totalCost}${c.reset}${effort ? sep + `${c.purple}Σ ${effort}${c.reset}` : `${c.reset}`}`,
+  ].join(sep);
 
   console.log(spaceBetween(r1left, r1right));
   console.log("─".repeat(parseInt(process.env.COLUMNS)));
   console.log(spaceBetween(r2left, r2right));
+  console.log("─".repeat(parseInt(process.env.COLUMNS)));
+  console.log(
+    spaceBetween(
+      `${c.green}Current:${c.reset} ${currentStats.join(sep)}`,
+      `⌚ ${formatMsToTime(totalDurationMs)}${sep}🛜 ${formatMsToTimeWithSecs(totalApiDurationMs)}`,
+    ),
+  );
   console.log("─".repeat(parseInt(process.env.COLUMNS)));
 });
